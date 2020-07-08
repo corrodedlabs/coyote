@@ -131,7 +131,7 @@ fn main() -> Result<()> {
 
             }   
         } 
-
+        // Selecting id and url from json table and Result is at `urlId` struct
         let mut url_stmt  = conn.prepare("SELECT ID, url FROM json")?;
         let url_reddit_iter = url_stmt.query_map(params![], |row| {
             Ok(urlId {
@@ -139,26 +139,27 @@ fn main() -> Result<()> {
                 url: row.get(1)?,
             })
         })?;
-
+        //vector `url_names` is created and the values of are pushed in it
         let mut url_names = Vec::new();
         for name_result in url_reddit_iter {
             url_names.push(name_result?);
         }
 
+        //`url` are requested 
         for links in url_names {
             let mut res = reqwest::blocking::get(&links.url.to_string())?; 
 
-            let mut body = Vec::new();
-            res.read_to_end(&mut body)?;
+            let mut body = Vec::new();// body is created which is a vector
+            res.read_to_end(&mut body)?; // `body` is read
 
-            let mut id = &links.ID.to_string();
-            let mut paths = format!("{}.html", &id);
-            let mut path = format!("{}", &id);
-            let mut filePath = format!("{}/{}",&path, &paths);
+            let mut id = &links.ID.to_string(); // ID is changed into string
+            let mut paths = format!("{}.html", &id); //variable `paths` is created to create string for html files
+            let mut path = format!("{}", &id); //variable ``path` is created for creating directory
+            let mut filePath = format!("{}/{}",&path, &paths); // variable `filePath` is created for creating file 
 
-            let mut htmlDir = create_dir(path)?;
-            let mut htmlFile = File::create(filePath)?;
-            htmlFile.write_all(&body.as_mut())?;
+            let mut htmlDir = create_dir(path)?; // creating folder
+            let mut htmlFile = File::create(filePath)?; // html file is created inside the folder
+            htmlFile.write_all(&body.as_mut())?; // html is written in the file
         }
 
  
