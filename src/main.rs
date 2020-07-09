@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 extern crate serde;
 extern crate serde_json;
 extern crate reqwest;
@@ -8,7 +9,7 @@ use anyhow::{Context, Result};
 use std::string;
 use std::fs::{File, create_dir};
 use std::io::{ErrorKind, Read};
-use reqwest::IntoUrl;
+use reqwest::{IntoUrl, Client};
 use std::io::prelude::*;
 use std::error::Error;
 use std::io::BufReader;
@@ -87,6 +88,27 @@ struct urlId {
     url: String,
 }
 
+
+pub fn url_get_request(Id:String, Url:String) -> Result<()> {
+
+    let client = reqwest::blocking::Client::new();
+    let mut res = client.get(&Url).send().unwrap(); 
+
+    let mut body = Vec::new();
+    res.read_to_end(&mut body)?;
+
+    let  paths = format!("{}.html", &Id);
+    let  path = format!("{}", &Id);
+    let  filePath = format!("{}/{}",&path, &paths);
+
+    let mut htmlDir = create_dir(path)?;
+    let mut htmlFile = File::create(filePath)?;
+    htmlFile.write_all(&body.as_mut())?;
+    println!("Status: {}", res.status());
+
+    Ok(())
+} 
+
 //main function
 fn main() -> Result<()> {
 
@@ -131,7 +153,7 @@ fn main() -> Result<()> {
 
             }   
         } 
-        // Selecting id and url from json table and Result is at `urlId` struct
+
         let mut url_stmt  = conn.prepare("SELECT ID, url FROM json")?;
         let url_reddit_iter = url_stmt.query_map(params![], |row| {
             Ok(urlId {
@@ -139,27 +161,42 @@ fn main() -> Result<()> {
                 url: row.get(1)?,
             })
         })?;
-        //vector `url_names` is created and the values of are pushed in it
+
         let mut url_names = Vec::new();
         for name_result in url_reddit_iter {
             url_names.push(name_result?);
         }
 
-        //`url` are requested 
-        for links in url_names {
-            let mut res = reqwest::blocking::get(&links.url.to_string())?; 
 
-            let mut body = Vec::new();// body is created which is a vector
-            res.read_to_end(&mut body)?; // `body` is read
 
-            let mut id = &links.ID.to_string(); // ID is changed into string
-            let mut paths = format!("{}.html", &id); //variable `paths` is created to create string for html files
-            let mut path = format!("{}", &id); //variable ``path` is created for creating directory
-            let mut filePath = format!("{}/{}",&path, &paths); // variable `filePath` is created for creating file 
+        let mut count = 0;
+        for links in url_names.iter() {
+            let url = links.url.to_string();
+            let id = links.ID.to_string();
+            if &url == "https://www.linkedin.com/jobs/view/1938385901/" {
+                continue;
+            }
 
-            let mut htmlDir = create_dir(path)?; // creating folder
-            let mut htmlFile = File::create(filePath)?; // html file is created inside the folder
-            htmlFile.write_all(&body.as_mut())?; // html is written in the file
+            url_get_request(id, url).expect("No problem");
+            /*
+            let client = reqwest::blocking::Client::new();
+            let mut res = client.get(&url).send().unwrap(); 
+
+            let mut body = Vec::new();
+            res.read_to_end(&mut body)?;
+
+            let mut paths = format!("{}.html", &id.to_string());
+            let mut path = format!("{}", &id.to_string());
+            let mut filePath = format!("{}/{}",&path, &paths);
+
+            let mut htmlDir = create_dir(path)?;
+            let mut htmlFile = File::create(filePath)?;
+            htmlFile.write_all(&body.as_mut())?;
+            println!("Status: {}", res.status());
+            */
+            count += 1;
+            println!("{}", count);   
+            
         }
 
  
