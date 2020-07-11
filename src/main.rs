@@ -1,22 +1,21 @@
-#![allow(dead_code)]
 extern crate serde;
 extern crate serde_json;
 extern crate reqwest;
 extern crate serde_derive;
 extern crate rusqlite;
 
-use anyhow::{Context, Result};
-use std::string;
+use anyhow::Result;
+//use std::string;
 use std::fs::{File, create_dir};
-use std::io::{ErrorKind, Read};
-use reqwest::{IntoUrl, Client};
+use std::io::Read;
+//use reqwest::{IntoUrl, Client};
 use std::io::prelude::*;
-use std::error::Error;
-use std::io::BufReader;
-use std::path::Path;
+//use std::error::Error;
+//use std::io::BufReader;
+//use std::path::Path;
 use serde::Deserialize;
 use rusqlite::{params, Connection};
-use std::env::args;
+//use std::env::args;
 
   /* struct RedditJson {
         id: i32,
@@ -46,12 +45,12 @@ struct Datas {
 
 fn read_json_from_file<P: AsRef<Path>>(path: P) -> Result<RedditJson, Box<Error>> {
     //open the file in read only
-    let mut file = File::open(path)?;
     let reader = BufReader::new(file);
+    let mut file = File::open(path)?;
     //Read the JSON file as an instance of RedditJson struct
     let read_file = serde_json::from_reader(reader)?;
 
-
+    
     Ok(read_file)
 }
 */
@@ -60,6 +59,36 @@ fn read_json_from_file<P: AsRef<Path>>(path: P) -> Result<RedditJson, Box<Error>
 #[derive(Deserialize, Debug)]
 struct RedditJson {
     data:  Data,
+}
+
+impl RedditJson {
+    fn subreddit_get_request(subreddits:Vec<String>) -> Vec<RedditJson> {
+
+        let mut subredditjsons: Vec<RedditJson> = Vec::new();
+        for i in subreddits.iter() {        
+            let sites = "https://www.reddit.com/r/".to_owned() + i + ".json";
+            let mut body = String::new();
+            let _json_body = reqwest::blocking::get(&sites).unwrap().read_to_string(&mut body);
+            let datas = serde_json::from_str::<RedditJson>(&body).unwrap();
+            subredditjsons.push(datas);
+        }
+        //println!("{:?}", subredditjsons);
+        subredditjsons
+    }
+
+    fn add_to_db(new: &Vec<RedditJson>, conn: &Connection) -> Result<()> {
+        
+        for j in new {
+            for k in &j.data.children {
+            conn.execute(
+                "INSERT or REPLACE INTO json (title,author_fullname,url) values(?1, ?2, ?3)",
+                params![k.data.title,k.data.author_fullname,k.data.url],
+            )?;
+
+            }   
+        }
+            Ok(())
+    }
 }
 
 // creating struct for `vec` i.e. list 
@@ -82,28 +111,78 @@ struct Datas {
     url: String,
 }
 
+impl Datas {
+    fn get_all_from_db(conn: &Connection) -> Result<Vec<Datas>> {
+        let mut stmt = conn.prepare("SELECT ID, title, author_fullname, url FROM json")?;
+        let reddit_iter = stmt.query_map(params![], |row| {
+            Ok(Datas {
+                title: row.get(1)?,
+                author_fullname: row.get(2)?,
+                url: row.get(3)?,
+            })
+        })?;
+
+        let mut db_datas: Vec<Datas> = Vec::new();
+        for data in reddit_iter {
+            db_datas.push(data.unwrap());
+        }
+        
+        Ok(db_datas)
+    }
+}
+
+
 #[derive(Deserialize, Debug)]
-struct urlId {
-    ID: i32,
+struct UrlId {
+    Id: i32,
     url: String,
 }
 
 
-pub fn url_get_request(Id:String, Url:String) -> Result<()> {
+
+pub fn create_db(conn: &Connection) -> Result<()> {
+    
+    conn.execute(
+        "CREATE TABLE json (
+            ID                 INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,             
+            title	           TEXT NOT NULL,
+            author_fullname    TEXT NOT NULL,
+            url	               TEXT NOT NULL UNIQUE
+        )",
+        params![],
+    )?;
+
+    Ok(())
+}
+/*
+pub fn subreddit_get_request (subreddits:Vec<String>) -> Result<()> {
+    for i in subreddits.iter() {
+        
+        let sites = "https://www.reddit.com/r/".to_owned() + i + ".json";
+        let read_file = reqwest::blocking::get(&sites)?.text()?;
+        let datas = serde_json::from_str::<RedditJson>(&read_file).unwrap();
+    }
+
+    Ok(())
+}
+*/
+
+
+pub fn url_get_request(id:String, url:String) -> Result<()> {
 
     let client = reqwest::blocking::Client::new();
-    let mut res = client.get(&Url).send().unwrap(); 
+    let mut res = client.get(&url).send().unwrap(); 
 
     let mut body = Vec::new();
     res.read_to_end(&mut body)?;
 
-    let  paths = format!("{}.html", &Id);
-    let  path = format!("{}", &Id);
-    let  filePath = format!("{}/{}",&path, &paths);
+    let  paths = format!("{}.html", &id);
+    let  path = format!("{}", &id);
+    let  file_path = format!("{}/{}",&path, &paths);
 
-    let mut htmlDir = create_dir(path)?;
-    let mut htmlFile = File::create(filePath)?;
-    htmlFile.write_all(&body.as_mut())?;
+    let mut _html_dir = create_dir(path)?;
+    let mut html_file = File::create(file_path)?;
+    html_file.write_all(&body.as_mut())?;
     println!("Status: {}", res.status());
 
     Ok(())
@@ -115,7 +194,10 @@ fn main() -> Result<()> {
 
     // Created a database named reddit.db
     let conn = Connection::open_in_memory().unwrap();
-
+    
+    create_db(&conn)?;
+    
+    /*
     conn.execute(
         "CREATE TABLE json (
             ID                 INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,             
@@ -124,24 +206,27 @@ fn main() -> Result<()> {
             url	               TEXT NOT NULL UNIQUE
         )",
         params![],
-    )?; 
+    )?;
+    */ 
     
     //HTTP get request
-    let subreddits: Vec<String>= vec!["Clojure".to_string(), "Haskell".to_string()];
+    let mut subreddits: Vec<String>= vec!["Clojure".to_string()];
+    let mut new = RedditJson::subreddit_get_request(subreddits);
 
-    for i in subreddits.iter() {
-        let sites = "https://www.reddit.com/r/".to_owned() + i + ".json";
-        let read_file = reqwest::blocking::get(&sites)?.text()?;
-        let datas = serde_json::from_str::<RedditJson>(&read_file).unwrap();
+    //for i in subreddits.iter() {
+
+        //let sites = "https://www.reddit.com/r/".to_owned() + i + ".json";
+        //let read_file = reqwest::blocking::get(&sites)?.text()?;
+        //let datas = serde_json::from_str::<RedditJson>(&read_file).unwrap();
         //for j in &datas.data.children {
         //    println!("{:?}", j );
         //}
-        for j in &datas.data.children {
-            conn.execute(
-                "INSERT or REPLACE INTO json (title,author_fullname,url) values(?1, ?2, ?3)",
-                params![j.data.title,j.data.author_fullname,j.data.url],
-            )?;
-                
+        //for j in &datas.data.children {
+        //    conn.execute(
+        //        "INSERT or REPLACE INTO json (title,author_fullname,url) values(?1, ?2, ?3)",
+        //        params![j.data.title,j.data.author_fullname,j.data.url],
+        //    )?;
+                /*
                 let mut stmt = conn.prepare("SELECT ID, title, author_fullname, url FROM json")?;
                 let reddit_iter = stmt.query_map(params![], |row| {
                     Ok(Datas {
@@ -150,17 +235,19 @@ fn main() -> Result<()> {
                         url: row.get(3)?,
                     })
                 })?;
-
-            }   
-        } 
+                */    
+                
+        RedditJson::add_to_db(&new, &conn)?;
+        Datas::get_all_from_db(&conn)?;
 
         let mut url_stmt  = conn.prepare("SELECT ID, url FROM json")?;
         let url_reddit_iter = url_stmt.query_map(params![], |row| {
-            Ok(urlId {
-                ID: row.get(0)?,
+            Ok(UrlId {
+                Id: row.get(0)?,
                 url: row.get(1)?,
             })
         })?;
+    
 
         let mut url_names = Vec::new();
         for name_result in url_reddit_iter {
@@ -172,7 +259,7 @@ fn main() -> Result<()> {
         let mut count = 0;
         for links in url_names.iter() {
             let url = links.url.to_string();
-            let id = links.ID.to_string();
+            let id = links.Id.to_string();
             if &url == "https://www.linkedin.com/jobs/view/1938385901/" {
                 continue;
             }
@@ -187,10 +274,10 @@ fn main() -> Result<()> {
 
             let mut paths = format!("{}.html", &id.to_string());
             let mut path = format!("{}", &id.to_string());
-            let mut filePath = format!("{}/{}",&path, &paths);
+            let mut file_path = format!("{}/{}",&path, &paths);
 
             let mut htmlDir = create_dir(path)?;
-            let mut htmlFile = File::create(filePath)?;
+            let mut htmlFile = File::create(file_path)?;
             htmlFile.write_all(&body.as_mut())?;
             println!("Status: {}", res.status());
             */
