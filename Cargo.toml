@@ -16,4 +16,5 @@ reqwest =  {version = "0.10.6", features = ["blocking", "json"]}
 openssl = { version = "0.10.30", features = ["vendored"] }
 tokio = { version = "0.2.21", features = ["macros"] }
 anyhow = "1.0.31"
-
+clap = "2.33.1"
+url = "2.1.1"
